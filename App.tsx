@@ -1,20 +1,26 @@
+import { NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { SQLiteProvider } from 'expo-sqlite';
+import { useEffect } from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
+import { migrateDbIfNeeded } from './src/data/db';
+import { RootNavigator } from './src/navigation/RootNavigator';
+import { ensureAndroidNotificationChannelAsync } from './src/notifications/setup';
 
 export default function App() {
+  useEffect(() => {
+    void ensureAndroidNotificationChannelAsync();
+  }, []);
+
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <SQLiteProvider databaseName="calender.db" onInit={migrateDbIfNeeded}>
+      <SafeAreaProvider>
+        <NavigationContainer>
+          <RootNavigator />
+          <StatusBar style="auto" />
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </SQLiteProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
