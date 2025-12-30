@@ -2,13 +2,13 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
 import { CalendarProvider, WeekCalendar } from 'react-native-calendars';
 
-import { EventList } from '../components/EventList';
 import { WeekDayCell } from '../components/WeekDayCell';
+import { WEEK_TIME_GUTTER_WIDTH, WeekTimeline } from '../components/WeekTimeline';
 import { listEventsInDateRange } from '../data/eventRepository';
-import { useEventsForDate } from '../hooks/useEventsForDate';
+import type { CalendarEvent } from '../domain/event';
 import type { RootStackParamList } from '../navigation/types';
 import { useCalendar } from '../state/CalendarContext';
 import {
@@ -20,12 +20,16 @@ import {
 
 type Navigation = NativeStackNavigationProp<RootStackParamList>;
 
+const SCREEN_WIDTH = Dimensions.get('window').width;
+
 export function WeekScreen() {
   const navigation = useNavigation<Navigation>();
   const db = useSQLiteContext();
   const { selectedDate, setSelectedDate } = useCalendar();
-  const { events, error, loading } = useEventsForDate(selectedDate);
   const [weekEventDays, setWeekEventDays] = useState<string[]>([]);
+  const [weekEvents, setWeekEvents] = useState<CalendarEvent[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const weekStart = useMemo(
     () => getWeekStartISODateLocal(selectedDate, 1),
@@ -37,6 +41,9 @@ export function WeekScreen() {
     let cancelled = false;
 
     async function loadWeekMarks() {
+      setLoading(true);
+      setError(null);
+
       const weekEvents = await listEventsInDateRange(db, weekStart, weekEnd);
       const days = new Set<string>();
       for (const e of weekEvents) {
@@ -63,14 +70,20 @@ export function WeekScreen() {
           }
         }
       }
-      if (!cancelled) setWeekEventDays(Array.from(days));
+      if (!cancelled) {
+        setWeekEvents(weekEvents);
+        setWeekEventDays(Array.from(days));
+      }
     }
 
     void loadWeekMarks().catch((e) => {
       if (!cancelled) {
+        setWeekEvents([]);
         setWeekEventDays([]);
-        console.warn('loadWeekMarks failed', e);
+        setError(e instanceof Error ? e.message : String(e));
       }
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
     });
 
     return () => {
@@ -97,16 +110,20 @@ export function WeekScreen() {
         date={selectedDate}
         onDateChanged={(date) => setSelectedDate(date)}
       >
-        <WeekCalendar
-          firstDay={1}
-          hideDayNames
-          dayComponent={WeekDayCell}
-          markedDates={markedDates}
-          theme={{
-            todayTextColor: '#111827',
-            selectedDayBackgroundColor: '#111827',
-          }}
-        />
+        <View style={styles.weekHeaderRow}>
+          <View style={{ width: WEEK_TIME_GUTTER_WIDTH }} />
+          <WeekCalendar
+            firstDay={1}
+            calendarWidth={SCREEN_WIDTH - WEEK_TIME_GUTTER_WIDTH}
+            hideDayNames
+            dayComponent={WeekDayCell}
+            markedDates={markedDates}
+            theme={{
+              todayTextColor: '#111827',
+              selectedDayBackgroundColor: '#111827',
+            }}
+          />
+        </View>
       </CalendarProvider>
 
       <Pressable
@@ -120,8 +137,11 @@ export function WeekScreen() {
 
       {error ? <Text style={styles.errorText}>加载失败：{error}</Text> : null}
       {loading ? <Text style={styles.subtitle}>加载中...</Text> : null}
-      <EventList
-        events={events}
+      <WeekTimeline
+        weekStart={weekStart}
+        selectedDate={selectedDate}
+        events={weekEvents}
+        onSelectDate={setSelectedDate}
         onPressEvent={(eventId) => navigation.navigate('EventDetail', { eventId })}
       />
     </View>
@@ -130,6 +150,7 @@ export function WeekScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, gap: 12 },
+  weekHeaderRow: { flexDirection: 'row' },
   subtitle: { fontSize: 14, color: '#555' },
   errorText: { fontSize: 14, color: '#B91C1C' },
   primaryButton: {
