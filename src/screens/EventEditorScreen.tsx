@@ -8,6 +8,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Linking,
   Pressable,
   StyleSheet,
   Switch,
@@ -50,7 +51,7 @@ export function EventEditorScreen() {
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
-  const [reminderMinutes, setReminderMinutes] = useState<number | null>(null);
+  const [reminderMinutes, setReminderMinutes] = useState<number[]>([]);
 
   const defaultStartAt = useMemo(() => {
     const base = initialDate
@@ -105,7 +106,7 @@ export function EventEditorScreen() {
         setTitle(event.title);
         setLocation(event.location ?? '');
         setNotes(event.notes ?? '');
-        setReminderMinutes(reminders[0]?.minutes_before ?? null);
+        setReminderMinutes(reminders.map((r) => r.minutes_before));
 
         if (event.isAllDay) {
           setIsAllDay(true);
@@ -241,21 +242,36 @@ export function EventEditorScreen() {
       }
 
       await cancelRemindersForEvent(db, eventId);
-      if (reminderMinutes != null) {
+      const uniqueMinutes = Array.from(new Set(reminderMinutes)).sort(
+        (a, b) => a - b,
+      );
+      if (uniqueMinutes.length > 0) {
         try {
-          await scheduleSingleReminderForEvent(db, {
-            eventId,
-            title: trimmed,
-            isAllDay,
-            startAtISO: isAllDay ? null : startAt.toISOString(),
-            startDate: isAllDay ? startDate : null,
-            minutesBefore: reminderMinutes,
-          });
+          for (const minutesBefore of uniqueMinutes) {
+            await scheduleSingleReminderForEvent(db, {
+              eventId,
+              title: trimmed,
+              isAllDay,
+              startAtISO: isAllDay ? null : startAt.toISOString(),
+              startDate: isAllDay ? startDate : null,
+              minutesBefore,
+            });
+          }
         } catch (e) {
-          Alert.alert(
-            '提醒设置失败',
-            e instanceof Error ? e.message : String(e),
-          );
+          const message = e instanceof Error ? e.message : String(e);
+          if (message.includes('未获得通知权限')) {
+            Alert.alert('提醒设置失败', message, [
+              { text: '取消', style: 'cancel' },
+              {
+                text: '去设置',
+                onPress: () => {
+                  void Linking.openSettings();
+                },
+              },
+            ]);
+          } else {
+            Alert.alert('提醒设置失败', message);
+          }
         }
       }
 
@@ -362,13 +378,16 @@ export function EventEditorScreen() {
         <Text style={styles.blockTitle}>提醒</Text>
         <View style={styles.chips}>
           <Pressable
-            style={[styles.chip, reminderMinutes === null ? styles.chipActive : null]}
-            onPress={() => setReminderMinutes(null)}
+            style={[
+              styles.chip,
+              reminderMinutes.length === 0 ? styles.chipActive : null,
+            ]}
+            onPress={() => setReminderMinutes([])}
           >
             <Text
               style={[
                 styles.chipText,
-                reminderMinutes === null ? styles.chipTextActive : null,
+                reminderMinutes.length === 0 ? styles.chipTextActive : null,
               ]}
             >
               无
@@ -378,13 +397,26 @@ export function EventEditorScreen() {
           {[0, 5, 10, 30].map((m) => (
             <Pressable
               key={m}
-              style={[styles.chip, reminderMinutes === m ? styles.chipActive : null]}
-              onPress={() => setReminderMinutes(m)}
+              style={[
+                styles.chip,
+                reminderMinutes.includes(m) ? styles.chipActive : null,
+              ]}
+              onPress={() => {
+                setReminderMinutes((prev) => {
+                  const set = new Set(prev);
+                  if (set.has(m)) {
+                    set.delete(m);
+                  } else {
+                    set.add(m);
+                  }
+                  return Array.from(set).sort((a, b) => a - b);
+                });
+              }}
             >
               <Text
                 style={[
                   styles.chipText,
-                  reminderMinutes === m ? styles.chipTextActive : null,
+                  reminderMinutes.includes(m) ? styles.chipTextActive : null,
                 ]}
               >
                 {m === 0 ? '准时' : `提前${m}分钟`}

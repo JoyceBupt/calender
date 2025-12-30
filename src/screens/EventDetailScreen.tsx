@@ -32,7 +32,7 @@ export function EventDetailScreen() {
   const navigation = useNavigation<Navigation>();
   const db = useSQLiteContext();
   const [event, setEvent] = useState<CalendarEvent | null>(null);
-  const [reminderMinutes, setReminderMinutes] = useState<number | null>(null);
+  const [reminderMinutes, setReminderMinutes] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -47,7 +47,7 @@ export function EventDetailScreen() {
         ]);
         if (!cancelled) {
           setEvent(found);
-          setReminderMinutes(reminders[0]?.minutes_before ?? null);
+          setReminderMinutes(reminders.map((r) => r.minutes_before));
         }
       } catch (e) {
         if (!cancelled) {
@@ -91,11 +91,11 @@ export function EventDetailScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>提醒</Text>
             <Text style={styles.sectionText}>
-              {reminderMinutes == null
+              {reminderMinutes.length === 0
                 ? '无'
-                : reminderMinutes === 0
-                  ? '准时'
-                  : `提前 ${reminderMinutes} 分钟`}
+                : reminderMinutes
+                    .map((m) => (m === 0 ? '准时' : `提前 ${m} 分钟`))
+                    .join('、')}
             </Text>
           </View>
 
