@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { CalendarProvider, WeekCalendar } from 'react-native-calendars';
 
 import { EventList } from '../components/EventList';
+import { WeekDayCell } from '../components/WeekDayCell';
 import { listEventsInDateRange } from '../data/eventRepository';
 import { useEventsForDate } from '../hooks/useEventsForDate';
 import type { RootStackParamList } from '../navigation/types';
@@ -98,6 +99,8 @@ export function WeekScreen() {
       >
         <WeekCalendar
           firstDay={1}
+          hideDayNames
+          dayComponent={WeekDayCell}
           markedDates={markedDates}
           theme={{
             todayTextColor: '#111827',
