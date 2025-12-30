@@ -10,7 +10,13 @@ import { listEventsInDateRange } from '../data/eventRepository';
 import { useEventsForDate } from '../hooks/useEventsForDate';
 import { useCalendar } from '../state/CalendarContext';
 import type { RootStackParamList } from '../navigation/types';
-import { addDaysISODateLocal, addMonthsISODateLocal, getMonthStartISODateLocal, toISODateLocal } from '../utils/date';
+import {
+  addDaysISODateLocal,
+  addMonthsISODateLocal,
+  getMonthStartISODateLocal,
+  parseISODateLocal,
+  toISODateLocal,
+} from '../utils/date';
 
 type Navigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -46,7 +52,20 @@ export function MonthScreen() {
             days.add(d);
           }
         } else {
-          days.add(toISODateLocal(new Date(e.startAt)));
+          const rangeStart = parseISODateLocal(monthStart);
+          const rangeEnd = parseISODateLocal(monthEnd);
+          const eventStart = new Date(e.startAt);
+          const eventEnd = new Date(e.endAt);
+          const startMs = Math.max(eventStart.getTime(), rangeStart.getTime());
+          const endMs = Math.min(eventEnd.getTime(), rangeEnd.getTime());
+          if (endMs > startMs) {
+            const startDay = toISODateLocal(new Date(startMs));
+            const lastMoment = new Date(endMs - 1);
+            const endDay = toISODateLocal(lastMoment);
+            for (let d = startDay; d <= endDay; d = addDaysISODateLocal(d, 1)) {
+              days.add(d);
+            }
+          }
         }
       }
 

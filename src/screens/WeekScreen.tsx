@@ -10,7 +10,12 @@ import { listEventsInDateRange } from '../data/eventRepository';
 import { useEventsForDate } from '../hooks/useEventsForDate';
 import type { RootStackParamList } from '../navigation/types';
 import { useCalendar } from '../state/CalendarContext';
-import { addDaysISODateLocal, getWeekStartISODateLocal, toISODateLocal } from '../utils/date';
+import {
+  addDaysISODateLocal,
+  getWeekStartISODateLocal,
+  parseISODateLocal,
+  toISODateLocal,
+} from '../utils/date';
 
 type Navigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -35,11 +40,26 @@ export function WeekScreen() {
       const days = new Set<string>();
       for (const e of weekEvents) {
         if (e.isAllDay) {
-          for (let d = e.startDate; d < e.endDate; d = addDaysISODateLocal(d, 1)) {
-            if (d >= weekStart && d < weekEnd) days.add(d);
+          const start = e.startDate < weekStart ? weekStart : e.startDate;
+          const end = e.endDate > weekEnd ? weekEnd : e.endDate;
+          for (let d = start; d < end; d = addDaysISODateLocal(d, 1)) {
+            days.add(d);
           }
         } else {
-          days.add(toISODateLocal(new Date(e.startAt)));
+          const rangeStart = parseISODateLocal(weekStart);
+          const rangeEnd = parseISODateLocal(weekEnd);
+          const eventStart = new Date(e.startAt);
+          const eventEnd = new Date(e.endAt);
+          const startMs = Math.max(eventStart.getTime(), rangeStart.getTime());
+          const endMs = Math.min(eventEnd.getTime(), rangeEnd.getTime());
+          if (endMs > startMs) {
+            const startDay = toISODateLocal(new Date(startMs));
+            const lastMoment = new Date(endMs - 1);
+            const endDay = toISODateLocal(lastMoment);
+            for (let d = startDay; d <= endDay; d = addDaysISODateLocal(d, 1)) {
+              if (d >= weekStart && d < weekEnd) days.add(d);
+            }
+          }
         }
       }
       if (!cancelled) setWeekEventDays(Array.from(days));

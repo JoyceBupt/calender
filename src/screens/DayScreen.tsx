@@ -3,7 +3,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DateSwitcher } from '../components/DateSwitcher';
-import { EventList } from '../components/EventList';
+import { DayTimeline } from '../components/DayTimeline';
 import { useEventsForDate } from '../hooks/useEventsForDate';
 import type { RootStackParamList } from '../navigation/types';
 import { useCalendar } from '../state/CalendarContext';
@@ -31,7 +31,8 @@ export function DayScreen() {
 
       {error ? <Text style={styles.errorText}>加载失败：{error}</Text> : null}
       {loading ? <Text style={styles.subtitle}>加载中...</Text> : null}
-      <EventList
+      <DayTimeline
+        isoDate={selectedDate}
         events={events}
         onPressEvent={(eventId) => navigation.navigate('EventDetail', { eventId })}
       />
