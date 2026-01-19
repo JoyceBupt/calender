@@ -2,12 +2,13 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Calendar, type DateData } from 'react-native-calendars';
 
 import { EventList } from '../components/EventList';
 import { LunarDayCell } from '../components/LunarDayCell';
 import { listEventsInDateRange } from '../data/eventRepository';
+import { exportEventsToICS, importEventsFromICS } from '../services/icalService';
 import { useEventsForDate } from '../hooks/useEventsForDate';
 import { useCalendar } from '../state/CalendarContext';
 import type { RootStackParamList } from '../navigation/types';
@@ -113,8 +114,38 @@ export function MonthScreen() {
     [setSelectedDate],
   );
 
+  const handleExport = useCallback(async () => {
+    try {
+      await exportEventsToICS(db);
+    } catch (e: any) {
+      Alert.alert('导出失败', e.message || '未知错误');
+    }
+  }, [db]);
+
+  const handleImport = useCallback(async () => {
+    try {
+      const count = await importEventsFromICS(db);
+      if (count > 0) {
+        Alert.alert('导入成功', `成功导入 ${count} 个日程`);
+        // 刷新月视图标记
+        setVisibleMonthStart((prev) => prev);
+      }
+    } catch (e: any) {
+      Alert.alert('导入失败', e.message || '未知错误');
+    }
+  }, [db]);
+
   return (
     <View style={styles.container}>
+      <View style={styles.actionRow}>
+        <Pressable style={styles.secondaryButton} onPress={handleImport}>
+          <Text style={styles.secondaryButtonText}>导入</Text>
+        </Pressable>
+        <Pressable style={styles.secondaryButton} onPress={handleExport}>
+          <Text style={styles.secondaryButtonText}>导出</Text>
+        </Pressable>
+      </View>
+
       <Calendar
         current={selectedDate}
         onDayPress={(day) => setSelectedDate(day.dateString)}
@@ -154,6 +185,11 @@ export function MonthScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, gap: 12 },
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
   subtitle: { fontSize: 14, color: '#555' },
   errorText: { fontSize: 14, color: '#B91C1C' },
   primaryButton: {
@@ -164,4 +200,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   primaryButtonText: { color: '#fff', fontWeight: '600' },
+  secondaryButton: {
+    backgroundColor: '#E5E7EB',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  secondaryButtonText: { color: '#374151', fontWeight: '600', fontSize: 13 },
 });

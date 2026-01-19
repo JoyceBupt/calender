@@ -188,3 +188,19 @@ export async function listEventsForDate(
 ): Promise<CalendarEvent[]> {
   return listEventsInDateRange(db, isoDate, addDaysISODateLocal(isoDate, 1));
 }
+
+/**
+ * 获取所有事件（用于导出）
+ */
+export async function listAllEvents(db: SQLiteDatabase): Promise<CalendarEvent[]> {
+  const rows = await db.getAllAsync<EventRow>(
+    `
+      SELECT * FROM events
+      ORDER BY
+        is_all_day DESC,
+        COALESCE(start_at, start_date) ASC
+    `,
+  );
+
+  return rows.map(mapEventRow);
+}

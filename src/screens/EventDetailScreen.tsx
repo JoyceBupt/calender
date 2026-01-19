@@ -10,6 +10,7 @@ import { listRemindersByEventId } from '../data/reminderRepository';
 import type { CalendarEvent } from '../domain/event';
 import type { RootStackParamList } from '../navigation/types';
 import { cancelRemindersForEvent } from '../notifications/reminderService';
+import { exportSingleEventToICS } from '../services/icalService';
 import { addDaysISODateLocal } from '../utils/date';
 
 type EventDetailRoute = RouteProp<RootStackParamList, 'EventDetail'>;
@@ -110,6 +111,19 @@ export function EventDetailScreen() {
             </Pressable>
 
             <Pressable
+              style={[styles.button, styles.shareButton]}
+              onPress={async () => {
+                try {
+                  await exportSingleEventToICS(event);
+                } catch (e: any) {
+                  Alert.alert('分享失败', e.message || '未知错误');
+                }
+              }}
+            >
+              <Text style={styles.shareButtonText}>分享</Text>
+            </Pressable>
+
+            <Pressable
               style={[styles.button, styles.dangerButton]}
               onPress={() => {
                 Alert.alert('删除日程', '确定要删除这个日程吗？', [
@@ -167,6 +181,8 @@ const styles = StyleSheet.create({
   },
   secondaryButton: { backgroundColor: '#111827' },
   secondaryButtonText: { color: '#fff', fontWeight: '700' },
+  shareButton: { backgroundColor: '#E0E7FF' },
+  shareButtonText: { color: '#3730A3', fontWeight: '700' },
   dangerButton: { backgroundColor: '#FEE2E2' },
   dangerButtonText: { color: '#991B1B', fontWeight: '800' },
 });
