@@ -1,8 +1,9 @@
 import type { DateData } from 'react-native-calendars';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { getTodayISODateLocal, parseISODateLocal } from '../utils/date';
+import { getLunarDayText, isSpecialLunarDay } from '../utils/lunar';
 
 type Props = {
   date?: DateData;
@@ -31,6 +32,22 @@ export function WeekDayCell(props: Props) {
   const textColor = selected ? '#fff' : disabled ? '#9CA3AF' : '#111827';
   const subColor = selected ? '#E5E7EB' : disabled ? '#D1D5DB' : '#6B7280';
 
+  const lunarText = useMemo(
+    () => getLunarDayText(date.year, date.month, date.day),
+    [date.year, date.month, date.day],
+  );
+
+  const isSpecial = useMemo(
+    () => isSpecialLunarDay(date.year, date.month, date.day),
+    [date.year, date.month, date.day],
+  );
+
+  const lunarColor = selected
+    ? 'rgba(255, 255, 255, 0.8)'
+    : isSpecial
+      ? '#DC2626'
+      : subColor;
+
   return (
     <Pressable
       style={[styles.container, { backgroundColor: bg }, isToday ? styles.today : null]}
@@ -40,6 +57,9 @@ export function WeekDayCell(props: Props) {
     >
       <Text style={[styles.weekday, { color: subColor }]}>{weekdayLabel}</Text>
       <Text style={[styles.day, { color: textColor }]}>{date.day}</Text>
+      <Text style={[styles.lunar, { color: lunarColor }]} numberOfLines={1}>
+        {lunarText}
+      </Text>
       <View style={styles.dotRow}>
         {marked ? (
           <View
@@ -79,7 +99,11 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 18,
   },
-  dotRow: { marginTop: 4, height: 8, alignItems: 'center', justifyContent: 'center' },
+  lunar: {
+    fontSize: 9,
+    marginTop: 1,
+  },
+  dotRow: { marginTop: 2, height: 8, alignItems: 'center', justifyContent: 'center' },
   dot: { width: 5, height: 5, borderRadius: 99 },
   dotPlaceholder: { width: 5, height: 5 },
 });

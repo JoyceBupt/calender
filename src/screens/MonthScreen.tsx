@@ -1,11 +1,12 @@
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Calendar, type DateData } from 'react-native-calendars';
 
 import { EventList } from '../components/EventList';
+import { LunarDayCell } from '../components/LunarDayCell';
 import { listEventsInDateRange } from '../data/eventRepository';
 import { useEventsForDate } from '../hooks/useEventsForDate';
 import { useCalendar } from '../state/CalendarContext';
@@ -100,6 +101,18 @@ export function MonthScreen() {
     return result;
   }, [monthEventDays, selectedDate]);
 
+  const renderDayComponent = useCallback(
+    (props: any) => (
+      <LunarDayCell
+        date={props.date}
+        state={props.state}
+        marking={props.marking}
+        onPress={(date) => setSelectedDate(date.dateString)}
+      />
+    ),
+    [setSelectedDate],
+  );
+
   return (
     <View style={styles.container}>
       <Calendar
@@ -112,6 +125,7 @@ export function MonthScreen() {
         markedDates={markedDates}
         enableSwipeMonths
         firstDay={1}
+        dayComponent={renderDayComponent}
         theme={{
           todayTextColor: '#111827',
           arrowColor: '#111827',
