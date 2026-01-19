@@ -2,11 +2,10 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Calendar, type DateData } from 'react-native-calendars';
 
 import { EventList } from '../components/EventList';
-import { LunarDayCell } from '../components/LunarDayCell';
 import { listEventsInDateRange } from '../data/eventRepository';
 import { exportEventsToICS, importEventsFromICS } from '../services/icalService';
 import { useEventsForDate } from '../hooks/useEventsForDate';
@@ -19,6 +18,7 @@ import {
   parseISODateLocal,
   toISODateLocal,
 } from '../utils/date';
+import { getLunarInfo } from '../utils/lunar';
 
 type Navigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -78,7 +78,6 @@ export function MonthScreen() {
 
     void loadMonthMarks().catch((e) => {
       if (!cancelled) {
-        // 标记加载失败不阻塞主要功能
         setMonthEventDays([]);
         console.warn('loadMonthMarks failed', e);
       }
@@ -102,18 +101,6 @@ export function MonthScreen() {
     return result;
   }, [monthEventDays, selectedDate]);
 
-  const renderDayComponent = useCallback(
-    (props: any) => (
-      <LunarDayCell
-        date={props.date}
-        state={props.state}
-        marking={props.marking}
-        onPress={(date) => setSelectedDate(date.dateString)}
-      />
-    ),
-    [setSelectedDate],
-  );
-
   const handleExport = useCallback(async () => {
     try {
       await exportEventsToICS(db);
@@ -127,7 +114,6 @@ export function MonthScreen() {
       const count = await importEventsFromICS(db);
       if (count > 0) {
         Alert.alert('导入成功', `成功导入 ${count} 个日程`);
-        // 刷新月视图标记
         setVisibleMonthStart((prev) => prev);
       }
     } catch (e: any) {
@@ -135,8 +121,18 @@ export function MonthScreen() {
     }
   }, [db]);
 
+  // 计算选中日期的农历信息
+  const selectedLunarText = useMemo(() => {
+    const [y, m, d] = selectedDate.split('-').map(Number);
+    const info = getLunarInfo(y, m, d);
+    let text = info.month + info.day;
+    if (info.festival) text = info.festival;
+    else if (info.solarTerm) text = info.solarTerm;
+    return text;
+  }, [selectedDate]);
+
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       <View style={styles.actionRow}>
         <Pressable
           style={styles.secondaryButton}
@@ -160,15 +156,19 @@ export function MonthScreen() {
           setVisibleMonthStart(monthStart);
         }}
         markedDates={markedDates}
-        enableSwipeMonths
         firstDay={1}
-        dayComponent={renderDayComponent}
         theme={{
-          todayTextColor: '#111827',
+          todayTextColor: '#2563EB',
           arrowColor: '#111827',
           selectedDayBackgroundColor: '#111827',
+          selectedDayTextColor: '#ffffff',
         }}
       />
+
+      <View style={styles.selectedDateInfo}>
+        <Text style={styles.selectedDateText}>{selectedDate}</Text>
+        <Text style={styles.lunarText}>{selectedLunarText}</Text>
+      </View>
 
       <Pressable
         style={styles.primaryButton}
@@ -186,16 +186,32 @@ export function MonthScreen() {
         subscriptionEvents={subscriptionEvents}
         onPressEvent={(eventId) => navigation.navigate('EventDetail', { eventId })}
       />
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 12 },
+  container: { flex: 1 },
+  contentContainer: { padding: 16, gap: 12 },
   actionRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 8,
+  },
+  selectedDateInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+  },
+  selectedDateText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  lunarText: {
+    fontSize: 14,
+    color: '#6B7280',
   },
   subtitle: { fontSize: 14, color: '#555' },
   errorText: { fontSize: 14, color: '#B91C1C' },
