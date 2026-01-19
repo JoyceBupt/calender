@@ -26,7 +26,7 @@ export function MonthScreen() {
   const navigation = useNavigation<Navigation>();
   const db = useSQLiteContext();
   const { selectedDate, setSelectedDate } = useCalendar();
-  const { events, error, loading } = useEventsForDate(selectedDate);
+  const { events, subscriptionEvents, error, loading } = useEventsForDate(selectedDate);
   const [visibleMonthStart, setVisibleMonthStart] = useState(() =>
     getMonthStartISODateLocal(selectedDate),
   );
@@ -138,6 +138,12 @@ export function MonthScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.actionRow}>
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={() => navigation.navigate('Subscriptions')}
+        >
+          <Text style={styles.secondaryButtonText}>订阅</Text>
+        </Pressable>
         <Pressable style={styles.secondaryButton} onPress={handleImport}>
           <Text style={styles.secondaryButtonText}>导入</Text>
         </Pressable>
@@ -177,6 +183,7 @@ export function MonthScreen() {
       {loading ? <Text style={styles.subtitle}>加载中...</Text> : null}
       <EventList
         events={events}
+        subscriptionEvents={subscriptionEvents}
         onPressEvent={(eventId) => navigation.navigate('EventDetail', { eventId })}
       />
     </View>

@@ -2,6 +2,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { EventDetailScreen } from '../screens/EventDetailScreen';
 import { EventEditorScreen } from '../screens/EventEditorScreen';
+import { SubscriptionsScreen } from '../screens/SubscriptionsScreen';
 import { HomeTabs } from './HomeTabs';
 import type { RootStackParamList } from './types';
 
@@ -22,6 +23,11 @@ export function RootNavigator() {
         name="EventDetail"
         component={EventDetailScreen}
         options={{ title: '日程详情' }}
+      />
+      <Stack.Screen
+        name="Subscriptions"
+        component={SubscriptionsScreen}
+        options={{ title: '订阅管理' }}
       />
     </Stack.Navigator>
   );

@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { CalendarEvent } from '../domain/event';
+import type { SubscriptionEvent } from '../domain/subscription';
 import { addDaysISODateLocal } from '../utils/date';
 
 function formatTime(iso: string): string {
@@ -8,7 +9,9 @@ function formatTime(iso: string): string {
   return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
-function getEventTimeLabel(event: CalendarEvent): string {
+function getEventTimeLabel(
+  event: CalendarEvent | SubscriptionEvent,
+): string {
   if (event.isAllDay) {
     const endInclusive = addDaysISODateLocal(event.endDate, -1);
     if (event.startDate === endInclusive) return '全天';
@@ -19,12 +22,16 @@ function getEventTimeLabel(event: CalendarEvent): string {
 
 export function EventList({
   events,
+  subscriptionEvents = [],
   onPressEvent,
 }: {
   events: CalendarEvent[];
+  subscriptionEvents?: (SubscriptionEvent & { color: string })[];
   onPressEvent: (eventId: string) => void;
 }) {
-  if (events.length === 0) {
+  const hasEvents = events.length > 0 || subscriptionEvents.length > 0;
+
+  if (!hasEvents) {
     return (
       <View style={styles.empty}>
         <Text style={styles.emptyText}>当天暂无日程</Text>
@@ -48,6 +55,20 @@ export function EventList({
           </Text>
         </Pressable>
       ))}
+
+      {subscriptionEvents.map((event) => (
+        <View
+          key={event.id}
+          style={[styles.item, { borderLeftWidth: 3, borderLeftColor: event.color }]}
+        >
+          <Text style={styles.itemTitle} numberOfLines={1}>
+            {event.title}
+          </Text>
+          <Text style={styles.itemSubtitle} numberOfLines={1}>
+            {getEventTimeLabel(event)} · 订阅
+          </Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -70,4 +91,3 @@ const styles = StyleSheet.create({
   },
   emptyText: { color: '#6B7280' },
 });
-

@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   await db.execAsync('PRAGMA foreign_keys = ON;');
@@ -54,6 +54,40 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       );
 
       CREATE INDEX IF NOT EXISTS idx_reminders_event_id ON reminders(event_id);
+    `);
+  }
+
+  if (currentDbVersion < 2) {
+    await db.execAsync(`
+      -- 订阅源表
+      CREATE TABLE IF NOT EXISTS subscriptions (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        url TEXT NOT NULL,
+        color TEXT NOT NULL DEFAULT '#6366F1',
+        last_synced_at TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      -- 订阅事件表（只读，每次同步时重建）
+      CREATE TABLE IF NOT EXISTS subscription_events (
+        id TEXT PRIMARY KEY NOT NULL,
+        subscription_id TEXT NOT NULL,
+        uid TEXT NOT NULL,
+        title TEXT NOT NULL,
+        notes TEXT,
+        location TEXT,
+        is_all_day INTEGER NOT NULL,
+        start_at TEXT,
+        end_at TEXT,
+        start_date TEXT,
+        end_date TEXT,
+        FOREIGN KEY(subscription_id) REFERENCES subscriptions(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_sub_events_subscription_id ON subscription_events(subscription_id);
+      CREATE INDEX IF NOT EXISTS idx_sub_events_start_date ON subscription_events(start_date);
+      CREATE INDEX IF NOT EXISTS idx_sub_events_start_at ON subscription_events(start_at);
     `);
   }
 
