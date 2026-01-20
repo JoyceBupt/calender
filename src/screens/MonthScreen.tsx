@@ -32,6 +32,7 @@ export function MonthScreen() {
     getMonthStartISODateLocal(selectedDate),
   );
   const [monthEventDays, setMonthEventDays] = useState<string[]>([]);
+  const [marksVersion, setMarksVersion] = useState(0);
 
   const selectedMonthKey = selectedDate.slice(0, 7);
   useEffect(() => {
@@ -87,7 +88,7 @@ export function MonthScreen() {
     return () => {
       cancelled = true;
     };
-  }, [db, visibleMonthStart, isFocused]);
+  }, [db, visibleMonthStart, isFocused, marksVersion]);
 
   const markedDates = useMemo(() => {
     const result: Record<string, any> = {};
@@ -115,7 +116,7 @@ export function MonthScreen() {
       const count = await importEventsFromICS(db);
       if (count > 0) {
         Alert.alert('导入成功', `成功导入 ${count} 个日程`);
-        setVisibleMonthStart((prev) => prev);
+        setMarksVersion((v) => v + 1);
       }
     } catch (e: any) {
       Alert.alert('导入失败', e.message || '未知错误');
