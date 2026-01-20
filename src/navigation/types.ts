@@ -1,7 +1,7 @@
 export type RootStackParamList = {
   Home: undefined;
   EventEditor: { eventId?: string; initialDate?: string } | undefined;
-  EventDetail: { eventId: string };
+  EventDetail: { eventId: string; source?: 'local' | 'subscription' };
   Subscriptions: undefined;
 };
 
@@ -10,4 +10,3 @@ export type HomeTabParamList = {
   Week: undefined;
   Day: undefined;
 };
-

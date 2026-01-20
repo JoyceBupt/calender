@@ -189,7 +189,9 @@ export function MonthScreen() {
         events={events}
         subscriptionEvents={subscriptionEvents}
         loading={loading}
-        onPressEvent={(eventId) => navigation.navigate('EventDetail', { eventId })}
+        onPressEvent={({ source, eventId }) =>
+          navigation.navigate('EventDetail', { eventId, source })
+        }
       />
     </ScrollView>
   );

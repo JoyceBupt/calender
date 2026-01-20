@@ -28,6 +28,12 @@ type SubscriptionEventRow = {
   end_date: string | null;
 };
 
+export type SubscriptionEventDetail = SubscriptionEvent & {
+  color: string;
+  subscriptionName: string;
+  subscriptionUrl: string;
+};
+
 function mapSubscriptionRow(row: SubscriptionRow): Subscription {
   return {
     id: row.id,
@@ -209,4 +215,37 @@ export async function listSubscriptionEventsInDateRange(
     ...mapSubscriptionEventRow(row),
     color: row.color,
   }));
+}
+
+export async function getSubscriptionEventDetailById(
+  db: SQLiteDatabase,
+  id: string,
+): Promise<SubscriptionEventDetail | null> {
+  const row = await db.getFirstAsync<
+    (SubscriptionEventRow & {
+      subscription_name: string;
+      subscription_url: string;
+      color: string;
+    })
+  >(
+    `
+    SELECT
+      se.*,
+      s.name AS subscription_name,
+      s.url AS subscription_url,
+      s.color AS color
+    FROM subscription_events se
+    JOIN subscriptions s ON se.subscription_id = s.id
+    WHERE se.id = ?
+    `,
+    id,
+  );
+
+  if (!row) return null;
+  return {
+    ...mapSubscriptionEventRow(row),
+    color: row.color,
+    subscriptionName: row.subscription_name,
+    subscriptionUrl: row.subscription_url,
+  };
 }

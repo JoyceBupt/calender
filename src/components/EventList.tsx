@@ -29,7 +29,7 @@ export function EventList({
   events: CalendarEvent[];
   subscriptionEvents?: (SubscriptionEvent & { color: string })[];
   loading?: boolean;
-  onPressEvent: (eventId: string) => void;
+  onPressEvent: (params: { source: 'local' | 'subscription'; eventId: string }) => void;
 }) {
   const hasEvents = events.length > 0 || subscriptionEvents.length > 0;
 
@@ -56,7 +56,7 @@ export function EventList({
         <Pressable
           key={event.id}
           style={styles.item}
-          onPress={() => onPressEvent(event.id)}
+          onPress={() => onPressEvent({ source: 'local', eventId: event.id })}
         >
           <Text style={styles.itemTitle} numberOfLines={1}>
             {event.title}
@@ -68,9 +68,10 @@ export function EventList({
       ))}
 
       {subscriptionEvents.map((event) => (
-        <View
+        <Pressable
           key={event.id}
           style={[styles.item, { borderLeftWidth: 3, borderLeftColor: event.color }]}
+          onPress={() => onPressEvent({ source: 'subscription', eventId: event.id })}
         >
           <Text style={styles.itemTitle} numberOfLines={1}>
             {event.title}
@@ -78,7 +79,7 @@ export function EventList({
           <Text style={styles.itemSubtitle} numberOfLines={1}>
             {getEventTimeLabel(event)} · 订阅
           </Text>
-        </View>
+        </Pressable>
       ))}
     </View>
   );
