@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { CalendarEvent } from '../domain/event';
 import type { SubscriptionEvent } from '../domain/subscription';
@@ -23,13 +23,24 @@ function getEventTimeLabel(
 export function EventList({
   events,
   subscriptionEvents = [],
+  loading = false,
   onPressEvent,
 }: {
   events: CalendarEvent[];
   subscriptionEvents?: (SubscriptionEvent & { color: string })[];
+  loading?: boolean;
   onPressEvent: (eventId: string) => void;
 }) {
   const hasEvents = events.length > 0 || subscriptionEvents.length > 0;
+
+  // 加载中：显示占位区域
+  if (loading && !hasEvents) {
+    return (
+      <View style={styles.empty}>
+        <ActivityIndicator size="small" color="#6B7280" />
+      </View>
+    );
+  }
 
   if (!hasEvents) {
     return (
@@ -40,7 +51,7 @@ export function EventList({
   }
 
   return (
-    <View style={styles.list}>
+    <View style={[styles.list, loading && styles.listLoading]}>
       {events.map((event) => (
         <Pressable
           key={event.id}
@@ -75,6 +86,7 @@ export function EventList({
 
 const styles = StyleSheet.create({
   list: { gap: 10 },
+  listLoading: { opacity: 0.5 },
   item: {
     backgroundColor: '#F3F4F6',
     borderRadius: 12,
@@ -88,6 +100,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   emptyText: { color: '#6B7280' },
 });

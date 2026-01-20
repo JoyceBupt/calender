@@ -1,5 +1,5 @@
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -18,13 +18,14 @@ import {
   parseISODateLocal,
   toISODateLocal,
 } from '../utils/date';
-import { getLunarInfo } from '../utils/lunar';
+import { getLunarInfo, isSpecialLunarDay } from '../utils/lunar';
 
 type Navigation = NativeStackNavigationProp<RootStackParamList>;
 
 export function MonthScreen() {
   const navigation = useNavigation<Navigation>();
   const db = useSQLiteContext();
+  const isFocused = useIsFocused();
   const { selectedDate, setSelectedDate } = useCalendar();
   const { events, subscriptionEvents, error, loading } = useEventsForDate(selectedDate);
   const [visibleMonthStart, setVisibleMonthStart] = useState(() =>
@@ -86,7 +87,7 @@ export function MonthScreen() {
     return () => {
       cancelled = true;
     };
-  }, [db, visibleMonthStart]);
+  }, [db, visibleMonthStart, isFocused]);
 
   const markedDates = useMemo(() => {
     const result: Record<string, any> = {};
@@ -122,13 +123,14 @@ export function MonthScreen() {
   }, [db]);
 
   // 计算选中日期的农历信息
-  const selectedLunarText = useMemo(() => {
+  const selectedLunarInfo = useMemo(() => {
     const [y, m, d] = selectedDate.split('-').map(Number);
     const info = getLunarInfo(y, m, d);
     let text = info.month + info.day;
     if (info.festival) text = info.festival;
     else if (info.solarTerm) text = info.solarTerm;
-    return text;
+    const isSpecial = isSpecialLunarDay(y, m, d);
+    return { text, isSpecial };
   }, [selectedDate]);
 
   return (
@@ -167,7 +169,9 @@ export function MonthScreen() {
 
       <View style={styles.selectedDateInfo}>
         <Text style={styles.selectedDateText}>{selectedDate}</Text>
-        <Text style={styles.lunarText}>{selectedLunarText}</Text>
+        <Text style={[styles.lunarText, selectedLunarInfo.isSpecial && styles.lunarSpecial]}>
+          {selectedLunarInfo.text}
+        </Text>
       </View>
 
       <Pressable
@@ -180,10 +184,10 @@ export function MonthScreen() {
       </Pressable>
 
       {error ? <Text style={styles.errorText}>加载失败：{error}</Text> : null}
-      {loading ? <Text style={styles.subtitle}>加载中...</Text> : null}
       <EventList
         events={events}
         subscriptionEvents={subscriptionEvents}
+        loading={loading}
         onPressEvent={(eventId) => navigation.navigate('EventDetail', { eventId })}
       />
     </ScrollView>
@@ -213,7 +217,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7280',
   },
-  subtitle: { fontSize: 14, color: '#555' },
+  lunarSpecial: {
+    color: '#DC2626',
+  },
   errorText: { fontSize: 14, color: '#B91C1C' },
   primaryButton: {
     alignSelf: 'flex-start',

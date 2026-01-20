@@ -1,5 +1,5 @@
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -25,10 +25,10 @@ const WEEKDAY_LABELS = ['一', '二', '三', '四', '五', '六', '日'];
 export function WeekScreen() {
   const navigation = useNavigation<Navigation>();
   const db = useSQLiteContext();
+  const isFocused = useIsFocused();
   const { selectedDate, setSelectedDate } = useCalendar();
   const [weekEventDays, setWeekEventDays] = useState<string[]>([]);
   const [weekEvents, setWeekEvents] = useState<CalendarEvent[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const weekStart = useMemo(
@@ -48,7 +48,6 @@ export function WeekScreen() {
     let cancelled = false;
 
     async function loadWeekMarks() {
-      setLoading(true);
       setError(null);
 
       const weekEvents = await listEventsInDateRange(db, weekStart, weekEnd);
@@ -89,17 +88,49 @@ export function WeekScreen() {
         setWeekEventDays([]);
         setError(e instanceof Error ? e.message : String(e));
       }
-    }).finally(() => {
-      if (!cancelled) setLoading(false);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [db, weekEnd, weekStart]);
+  }, [db, weekEnd, weekStart, isFocused]);
+
+  const goToPrevWeek = () => {
+    setSelectedDate(addDaysISODateLocal(selectedDate, -7));
+  };
+
+  const goToNextWeek = () => {
+    setSelectedDate(addDaysISODateLocal(selectedDate, 7));
+  };
+
+  // 周范围显示文本
+  const weekRangeText = useMemo(() => {
+    const start = weekDays[0];
+    const end = weekDays[6];
+    const [sy, sm, sd] = start.split('-').map(Number);
+    const [ey, em, ed] = end.split('-').map(Number);
+    if (sy === ey && sm === em) {
+      return `${sy}年${sm}月${sd}日 - ${ed}日`;
+    }
+    if (sy === ey) {
+      return `${sy}年${sm}月${sd}日 - ${em}月${ed}日`;
+    }
+    return `${sy}年${sm}月${sd}日 - ${ey}年${em}月${ed}日`;
+  }, [weekDays]);
 
   return (
     <View style={styles.container}>
+      {/* 周导航 */}
+      <View style={styles.weekNavRow}>
+        <Pressable style={styles.navButton} onPress={goToPrevWeek}>
+          <Text style={styles.navButtonText}>‹</Text>
+        </Pressable>
+        <Text style={styles.weekRangeText}>{weekRangeText}</Text>
+        <Pressable style={styles.navButton} onPress={goToNextWeek}>
+          <Text style={styles.navButtonText}>›</Text>
+        </Pressable>
+      </View>
+
       {/* 自定义周头部 */}
       <View style={styles.weekHeaderRow}>
         <View style={{ width: 36 }} />
@@ -155,7 +186,6 @@ export function WeekScreen() {
       </Pressable>
 
       {error ? <Text style={styles.errorText}>加载失败：{error}</Text> : null}
-      {loading ? <Text style={styles.subtitle}>加载中...</Text> : null}
       <WeekTimeline
         weekStart={weekStart}
         selectedDate={selectedDate}
@@ -217,7 +247,6 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: '#111827',
   },
-  subtitle: { fontSize: 14, color: '#555' },
   errorText: { fontSize: 14, color: '#B91C1C' },
   primaryButton: {
     alignSelf: 'flex-start',
