@@ -3,6 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import type { Subscription, SubscriptionEvent } from '../domain/subscription';
 import type { EventUpsertInput } from '../domain/event';
 import { generateId } from '../domain/id';
+import { parseISODateLocal } from '../utils/date';
 
 type SubscriptionRow = {
   id: string;
@@ -183,12 +184,8 @@ export async function listSubscriptionEventsInDateRange(
   rangeStartDate: string,
   rangeEndDateExclusive: string,
 ): Promise<(SubscriptionEvent & { color: string })[]> {
-  const rangeStartUtc = new Date(
-    new Date(rangeStartDate).getTime() - new Date().getTimezoneOffset() * 60000,
-  ).toISOString();
-  const rangeEndUtc = new Date(
-    new Date(rangeEndDateExclusive).getTime() - new Date().getTimezoneOffset() * 60000,
-  ).toISOString();
+  const rangeStartUtc = parseISODateLocal(rangeStartDate).toISOString();
+  const rangeEndUtc = parseISODateLocal(rangeEndDateExclusive).toISOString();
 
   const rows = await db.getAllAsync<SubscriptionEventRow & { color: string }>(
     `
