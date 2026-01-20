@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "npm run typecheck",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",

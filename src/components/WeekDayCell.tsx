@@ -1,6 +1,7 @@
 import type { DateData } from 'react-native-calendars';
 import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import type { MarkingProps } from 'react-native-calendars/src/calendar/day/marking';
 
 import { getTodayISODateLocal, parseISODateLocal } from '../utils/date';
 import { getLunarDayText, isSpecialLunarDay } from '../utils/lunar';
@@ -8,7 +9,7 @@ import { getLunarDayText, isSpecialLunarDay } from '../utils/lunar';
 type Props = {
   date?: DateData;
   state?: string;
-  marking?: any;
+  marking?: MarkingProps;
   onPress?: (date: DateData) => void;
   onLongPress?: (date: DateData) => void;
   children?: React.ReactNode;

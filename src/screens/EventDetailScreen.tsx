@@ -204,8 +204,8 @@ export function EventDetailScreen() {
                           };
 
                   await exportSingleEventToICS(shareEvent);
-                } catch (e: any) {
-                  Alert.alert('分享失败', e.message || '未知错误');
+                } catch (e) {
+                  Alert.alert('分享失败', e instanceof Error ? e.message : String(e) || '未知错误');
                 }
               }}
             >

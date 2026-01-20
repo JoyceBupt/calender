@@ -70,15 +70,18 @@ export function SubscriptionsScreen() {
       try {
         const count = await syncSubscription(db, subscription.id);
         Alert.alert('添加成功', `已同步 ${count} 个日程`);
-      } catch (e: any) {
-        Alert.alert('同步失败', e.message || '请稍后重试');
+      } catch (e) {
+        Alert.alert(
+          '同步失败',
+          e instanceof Error ? e.message : String(e) || '请稍后重试',
+        );
       } finally {
         setSyncing(null);
       }
 
       await loadSubscriptions();
-    } catch (e: any) {
-      Alert.alert('添加失败', e.message || '未知错误');
+    } catch (e) {
+      Alert.alert('添加失败', e instanceof Error ? e.message : String(e) || '未知错误');
     }
   };
 
@@ -88,8 +91,11 @@ export function SubscriptionsScreen() {
       const count = await syncSubscription(db, subscription.id);
       Alert.alert('同步成功', `已同步 ${count} 个日程`);
       await loadSubscriptions();
-    } catch (e: any) {
-      Alert.alert('同步失败', e.message || '请稍后重试');
+    } catch (e) {
+      Alert.alert(
+        '同步失败',
+        e instanceof Error ? e.message : String(e) || '请稍后重试',
+      );
     } finally {
       setSyncing(null);
     }
@@ -105,8 +111,11 @@ export function SubscriptionsScreen() {
           try {
             await deleteSubscription(db, subscription.id);
             await loadSubscriptions();
-          } catch (e: any) {
-            Alert.alert('删除失败', e.message || '未知错误');
+          } catch (e) {
+            Alert.alert(
+              '删除失败',
+              e instanceof Error ? e.message : String(e) || '未知错误',
+            );
           }
         },
       },
