@@ -142,11 +142,29 @@ export function WeekTimeline({
   const todayIndex = days.indexOf(today);
   const showNow = todayIndex !== -1;
 
-  const nowMinutes = useMemo(() => {
+  const [nowMinutes, setNowMinutes] = useState<number | null>(() => {
     if (!showNow) return null;
     const now = new Date();
     const dayStart = parseISODateLocal(today);
     return (now.getTime() - dayStart.getTime()) / 60000;
+  });
+
+  // 每分钟更新当前时间线位置
+  useEffect(() => {
+    if (!showNow) {
+      setNowMinutes(null);
+      return;
+    }
+
+    const updateNow = () => {
+      const now = new Date();
+      const dayStart = parseISODateLocal(today);
+      setNowMinutes((now.getTime() - dayStart.getTime()) / 60000);
+    };
+
+    updateNow();
+    const interval = setInterval(updateNow, 60000); // 每分钟更新
+    return () => clearInterval(interval);
   }, [showNow, today]);
 
   const dayColumnWidth = gridWidth > 0 ? gridWidth / 7 : 0;
@@ -204,7 +222,7 @@ export function WeekTimeline({
           {showNow && nowMinutes != null && dayColumnWidth > 0 && (
             <View
               style={[
-                styles.nowLine,
+                styles.nowLineContainer,
                 {
                   top: Math.max(0, nowMinutes * PX_PER_MINUTE),
                   left: todayIndex * dayColumnWidth,
@@ -212,7 +230,10 @@ export function WeekTimeline({
                 },
               ]}
               pointerEvents="none"
-            />
+            >
+              <View style={styles.nowDot} />
+              <View style={styles.nowLine} />
+            </View>
           )}
 
           {/* 事件块 */}
@@ -290,8 +311,21 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#E5E7EB',
   },
-  nowLine: {
+  nowLineContainer: {
     position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: -4,
+  },
+  nowDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+    marginLeft: -4,
+  },
+  nowLine: {
+    flex: 1,
     height: 2,
     backgroundColor: '#EF4444',
   },
