@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 
 import type { CalendarEvent } from '../domain/event';
+import type { SubscriptionEvent } from '../domain/subscription';
 import {
   addDaysISODateLocal,
   getTodayISODateLocal,
@@ -29,6 +30,8 @@ type TimedBlock = {
   columnCount: number;
   displayStart: Date;
   displayEnd: Date;
+  source: 'local' | 'subscription';
+  color: string | null;
 };
 
 function formatTime(date: Date): string {
@@ -37,8 +40,17 @@ function formatTime(date: Date): string {
 
 function clampTimedEventsToDay(
   isoDate: string,
-  events: CalendarEvent[],
-): { allDay: CalendarEvent[]; timed: TimedBlock[] } {
+  events: (
+    | (CalendarEvent & { source: 'local' })
+    | (SubscriptionEvent & { source: 'subscription'; color: string })
+  )[],
+): {
+  allDay: (
+    | (CalendarEvent & { source: 'local' })
+    | (SubscriptionEvent & { source: 'subscription'; color: string })
+  )[];
+  timed: TimedBlock[];
+} {
   const dayStart = parseISODateLocal(isoDate);
   const dayEnd = parseISODateLocal(addDaysISODateLocal(isoDate, 1));
 
@@ -55,6 +67,8 @@ function clampTimedEventsToDay(
         title: e.title,
         startMs,
         endMs,
+        source: e.source,
+        color: e.source === 'subscription' ? e.color : null,
       };
     })
     .filter((e) => e.endMs > e.startMs)
@@ -72,6 +86,8 @@ function clampTimedEventsToDay(
         columnCount: 1,
         displayStart,
         displayEnd,
+        source: e.source,
+        color: e.color,
       } satisfies TimedBlock;
     });
 
@@ -133,8 +149,11 @@ export function DayTimeline({
   onPressEvent,
 }: {
   isoDate: string;
-  events: CalendarEvent[];
-  onPressEvent: (eventId: string) => void;
+  events: (
+    | (CalendarEvent & { source: 'local' })
+    | (SubscriptionEvent & { source: 'subscription'; color: string })
+  )[];
+  onPressEvent: (params: { source: 'local' | 'subscription'; eventId: string }) => void;
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -177,9 +196,16 @@ export function DayTimeline({
             <View style={styles.allDayRow}>
               {allDay.map((event) => (
                 <Pressable
-                  key={event.id}
-                  style={styles.allDayChip}
-                  onPress={() => onPressEvent(event.id)}
+                  key={`${event.source}:${event.id}`}
+                  style={[
+                    styles.allDayChip,
+                    event.source === 'subscription'
+                      ? { backgroundColor: event.color }
+                      : null,
+                  ]}
+                  onPress={() =>
+                    onPressEvent({ source: event.source, eventId: event.id })
+                  }
                 >
                   <Text style={styles.allDayChipText} numberOfLines={1}>
                     {event.title}
@@ -225,12 +251,17 @@ export function DayTimeline({
 
                 return (
                   <Pressable
-                    key={block.id}
+                    key={`${block.source}:${block.id}:${block.startMinutes}`}
                     style={[
                       styles.eventBlock,
+                      block.source === 'subscription' && block.color
+                        ? { backgroundColor: block.color }
+                        : null,
                       { top, left, width, height },
                     ]}
-                    onPress={() => onPressEvent(block.id)}
+                    onPress={() =>
+                      onPressEvent({ source: block.source, eventId: block.id })
+                    }
                   >
                     <Text style={styles.eventTitle} numberOfLines={1}>
                       {block.title}

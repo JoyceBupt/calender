@@ -6,7 +6,9 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { WeekTimeline } from '../components/WeekTimeline';
 import { listEventsInDateRange } from '../data/eventRepository';
+import { listSubscriptionEventsInDateRange } from '../data/subscriptionRepository';
 import type { CalendarEvent } from '../domain/event';
+import type { SubscriptionEvent } from '../domain/subscription';
 import type { RootStackParamList } from '../navigation/types';
 import { useCalendar } from '../state/CalendarContext';
 import {
@@ -28,7 +30,12 @@ export function WeekScreen() {
   const isFocused = useIsFocused();
   const { selectedDate, setSelectedDate } = useCalendar();
   const [weekEventDays, setWeekEventDays] = useState<string[]>([]);
-  const [weekEvents, setWeekEvents] = useState<CalendarEvent[]>([]);
+  const [weekEvents, setWeekEvents] = useState<
+    (
+      | (CalendarEvent & { source: 'local' })
+      | (SubscriptionEvent & { source: 'subscription'; color: string })
+    )[]
+  >([]);
   const [error, setError] = useState<string | null>(null);
 
   const weekStart = useMemo(
@@ -50,7 +57,19 @@ export function WeekScreen() {
     async function loadWeekMarks() {
       setError(null);
 
-      const weekEvents = await listEventsInDateRange(db, weekStart, weekEnd);
+      const [localEvents, subscriptionEvents] = await Promise.all([
+        listEventsInDateRange(db, weekStart, weekEnd),
+        listSubscriptionEventsInDateRange(db, weekStart, weekEnd),
+      ]);
+
+      const weekEvents = [
+        ...localEvents.map((e) => ({ ...e, source: 'local' as const })),
+        ...subscriptionEvents.map((e) => ({ ...e, source: 'subscription' as const })),
+      ] satisfies (
+        | (CalendarEvent & { source: 'local' })
+        | (SubscriptionEvent & { source: 'subscription'; color: string })
+      )[];
+
       const days = new Set<string>();
       for (const e of weekEvents) {
         if (e.isAllDay) {
@@ -191,7 +210,9 @@ export function WeekScreen() {
         selectedDate={selectedDate}
         events={weekEvents}
         onSelectDate={setSelectedDate}
-        onPressEvent={(eventId) => navigation.navigate('EventDetail', { eventId })}
+        onPressEvent={({ source, eventId }) =>
+          navigation.navigate('EventDetail', { eventId, source })
+        }
       />
     </View>
   );

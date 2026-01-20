@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import type { CalendarEvent } from '../domain/event';
+import type { SubscriptionEvent } from '../domain/subscription';
 import { addDaysISODateLocal, getTodayISODateLocal, parseISODateLocal } from '../utils/date';
 
 const HOUR_HEIGHT = 56;
@@ -20,6 +21,8 @@ type TimedBlock = {
   columnCount: number;
   displayStart: Date;
   displayEnd: Date;
+  source: 'local' | 'subscription';
+  color: string | null;
 };
 
 function formatTime(date: Date): string {
@@ -73,50 +76,6 @@ function layoutTimedBlocks(blocks: Omit<TimedBlock, 'column' | 'columnCount'>[])
   return result;
 }
 
-function buildTimedBlocks(weekStart: string, events: CalendarEvent[]): { days: string[]; timedBlocks: TimedBlock[] } {
-  const days = Array.from({ length: 7 }).map((_, i) => addDaysISODateLocal(weekStart, i));
-  const timedBlocksRaw: Omit<TimedBlock, 'column' | 'columnCount'>[] = [];
-
-  for (const event of events) {
-    if (event.isAllDay) continue;
-    const eventStart = new Date(event.startAt);
-    const eventEnd = new Date(event.endAt);
-
-    for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
-      const isoDate = days[dayIndex];
-      const dayStart = parseISODateLocal(isoDate);
-      const dayEnd = parseISODateLocal(addDaysISODateLocal(isoDate, 1));
-
-      const startMs = Math.max(eventStart.getTime(), dayStart.getTime());
-      const endMs = Math.min(eventEnd.getTime(), dayEnd.getTime());
-      if (endMs <= startMs) continue;
-
-      const displayStart = new Date(startMs);
-      const displayEnd = new Date(endMs);
-      const startMinutes = (startMs - dayStart.getTime()) / 60000;
-      const endMinutes = (endMs - dayStart.getTime()) / 60000;
-
-      timedBlocksRaw.push({
-        id: event.id,
-        title: event.title,
-        dayIndex,
-        startMinutes,
-        endMinutes,
-        displayStart,
-        displayEnd,
-      });
-    }
-  }
-
-  const timedBlocks: TimedBlock[] = [];
-  for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
-    const dayBlocks = timedBlocksRaw.filter((b) => b.dayIndex === dayIndex);
-    timedBlocks.push(...layoutTimedBlocks(dayBlocks));
-  }
-
-  return { days, timedBlocks };
-}
-
 export function WeekTimeline({
   weekStart,
   selectedDate,
@@ -126,15 +85,62 @@ export function WeekTimeline({
 }: {
   weekStart: string;
   selectedDate: string;
-  events: CalendarEvent[];
+  events: (
+    | (CalendarEvent & { source: 'local' })
+    | (SubscriptionEvent & { source: 'subscription'; color: string })
+  )[];
   onSelectDate: (isoDate: string) => void;
-  onPressEvent: (eventId: string) => void;
+  onPressEvent: (params: { source: 'local' | 'subscription'; eventId: string }) => void;
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const [gridWidth, setGridWidth] = useState(0);
 
   const { days, timedBlocks } = useMemo(
-    () => buildTimedBlocks(weekStart, events),
+    () => {
+      const days = Array.from({ length: 7 }).map((_, i) => addDaysISODateLocal(weekStart, i));
+      const timedBlocksRaw: Omit<TimedBlock, 'column' | 'columnCount'>[] = [];
+
+      for (const event of events) {
+        if (event.isAllDay) continue;
+        const eventStart = new Date(event.startAt);
+        const eventEnd = new Date(event.endAt);
+
+        for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
+          const isoDate = days[dayIndex];
+          const dayStart = parseISODateLocal(isoDate);
+          const dayEnd = parseISODateLocal(addDaysISODateLocal(isoDate, 1));
+
+          const startMs = Math.max(eventStart.getTime(), dayStart.getTime());
+          const endMs = Math.min(eventEnd.getTime(), dayEnd.getTime());
+          if (endMs <= startMs) continue;
+
+          const displayStart = new Date(startMs);
+          const displayEnd = new Date(endMs);
+          const startMinutes = (startMs - dayStart.getTime()) / 60000;
+          const endMinutes = (endMs - dayStart.getTime()) / 60000;
+
+          timedBlocksRaw.push({
+            id: event.id,
+            title: event.title,
+            dayIndex,
+            startMinutes,
+            endMinutes,
+            displayStart,
+            displayEnd,
+            source: event.source,
+            color: event.source === 'subscription' ? event.color : null,
+          });
+        }
+      }
+
+      const timedBlocks: TimedBlock[] = [];
+      for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
+        const dayBlocks = timedBlocksRaw.filter((b) => b.dayIndex === dayIndex);
+        timedBlocks.push(...layoutTimedBlocks(dayBlocks));
+      }
+
+      return { days, timedBlocks };
+    },
     [events, weekStart],
   );
 
@@ -252,9 +258,15 @@ export function WeekTimeline({
 
                 return (
                   <Pressable
-                    key={`${b.dayIndex}:${b.id}:${b.startMinutes}`}
-                    style={[styles.eventBlock, { top, left, width, height }]}
-                    onPress={() => onPressEvent(b.id)}
+                    key={`${b.source}:${b.dayIndex}:${b.id}:${b.startMinutes}`}
+                    style={[
+                      styles.eventBlock,
+                      b.source === 'subscription' && b.color
+                        ? { backgroundColor: b.color }
+                        : null,
+                      { top, left, width, height },
+                    ]}
+                    onPress={() => onPressEvent({ source: b.source, eventId: b.id })}
                   >
                     <Text style={styles.eventTitle} numberOfLines={1}>
                       {b.title}
