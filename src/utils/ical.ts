@@ -53,8 +53,8 @@ function parseICalDateTime(value: string): { date: Date; isAllDay: boolean } {
     return { date: new Date(Date.UTC(y, m, d, h, min, s)), isAllDay: false };
   }
 
-  // 本地时间（假设为 UTC）
-  return { date: new Date(Date.UTC(y, m, d, h, min, s)), isAllDay: false };
+  // 浮动时间：按本地时间解析（多数订阅/导入文件以此表达“当地时间”）
+  return { date: new Date(y, m, d, h, min, s), isAllDay: false };
 }
 
 /**
@@ -165,6 +165,8 @@ function parseVEvent(veventLines: string[]): EventUpsertInput | null {
 
   const startResult = parseICalDateTime(props[dtStartKey]);
 
+  const baseId = uid || generateId();
+
   if (startResult.isAllDay) {
     // 全天事件
     const startDate = startResult.date;
@@ -183,7 +185,7 @@ function parseVEvent(veventLines: string[]): EventUpsertInput | null {
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
     return {
-      id: uid || generateId(),
+      id: baseId,
       title,
       notes,
       location,
@@ -201,7 +203,7 @@ function parseVEvent(veventLines: string[]): EventUpsertInput | null {
     }
 
     return {
-      id: uid || generateId(),
+      id: baseId,
       title,
       notes,
       location,
@@ -233,14 +235,295 @@ export function parseICS(content: string): EventUpsertInput[] {
       veventLines = [];
     } else if (trimmedLine === 'END:VEVENT') {
       inVEvent = false;
-      const event = parseVEvent(veventLines);
-      if (event) {
-        events.push(event);
-      }
+      const parsed = parseVEventWithRecurrence(veventLines);
+      events.push(...parsed);
     } else if (inVEvent) {
       veventLines.push(trimmedLine);
     }
   }
 
   return events;
+}
+
+type ExpandParams =
+  | {
+      baseId: string;
+      title: string;
+      notes: string | null;
+      location: string | null;
+      isAllDay: true;
+      start: Date; // inclusive
+      end: Date; // exclusive
+      rrule: string;
+    }
+  | {
+      baseId: string;
+      title: string;
+      notes: string | null;
+      location: string | null;
+      isAllDay: false;
+      start: Date;
+      end: Date;
+      rrule: string;
+    };
+
+function parseVEventWithRecurrence(veventLines: string[]): EventUpsertInput[] {
+  // parseVEvent 内部会处理无 RRULE 的普通事件
+  const props: Record<string, string> = {};
+  for (const line of veventLines) {
+    const colonIndex = line.indexOf(':');
+    if (colonIndex === -1) continue;
+    const key = line.slice(0, colonIndex).toUpperCase();
+    const value = line.slice(colonIndex + 1);
+    const baseName = key.split(';')[0];
+    props[baseName] = value;
+    props[key] = value;
+  }
+
+  const summary = props['SUMMARY'];
+  if (!summary) return [];
+
+  const uid = props['UID'];
+  const title = unescapeICalText(summary);
+  const notes = props['DESCRIPTION'] ? unescapeICalText(props['DESCRIPTION']) : null;
+  const location = props['LOCATION'] ? unescapeICalText(props['LOCATION']) : null;
+  const dtStartKey = Object.keys(props).find((k) => k.startsWith('DTSTART'));
+  const dtEndKey = Object.keys(props).find((k) => k.startsWith('DTEND'));
+  if (!dtStartKey) return [];
+
+  const rrule = props['RRULE'];
+  const startResult = parseICalDateTime(props[dtStartKey]);
+  const baseId = uid || generateId();
+
+  if (!rrule) {
+    const single = parseVEvent(veventLines);
+    return single ? [single] : [];
+  }
+
+  if (startResult.isAllDay) {
+    const startDate = startResult.date;
+    let endDate = startDate;
+    if (dtEndKey) {
+      const endResult = parseICalDateTime(props[dtEndKey]);
+      endDate = endResult.date;
+    } else {
+      endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + 1);
+    }
+
+    return expandRecurringEvents({
+      baseId,
+      title,
+      notes,
+      location,
+      isAllDay: true,
+      start: startDate,
+      end: endDate,
+      rrule,
+    });
+  }
+
+  let endAt = new Date(startResult.date.getTime() + 60 * 60 * 1000);
+  if (dtEndKey) {
+    const endResult = parseICalDateTime(props[dtEndKey]);
+    endAt = endResult.date;
+  }
+
+  return expandRecurringEvents({
+    baseId,
+    title,
+    notes,
+    location,
+    isAllDay: false,
+    start: startResult.date,
+    end: endAt,
+    rrule,
+  });
+}
+
+function expandRecurringEvents(params: ExpandParams): EventUpsertInput[] {
+  const rule: Record<string, string> = {};
+  for (const part of params.rrule.split(';')) {
+    const [k, v] = part.split('=');
+    if (!k || !v) continue;
+    rule[k.toUpperCase()] = v;
+  }
+
+  const freq = rule['FREQ']?.toUpperCase();
+  if (freq !== 'DAILY' && freq !== 'WEEKLY') {
+    // 其他频率暂不展开，退化为单个事件
+    return [toSingleEventUpsert(params)];
+  }
+
+  const interval = Math.max(1, Number(rule['INTERVAL'] ?? 1) || 1);
+  const countLimit = rule['COUNT'] ? Math.max(1, Number(rule['COUNT']) || 0) : null;
+  const until = rule['UNTIL'] ? parseICalDateTime(rule['UNTIL']).date : null;
+
+  const byDayRaw = rule['BYDAY'];
+  const byDaySet = new Set<number>();
+  if (freq === 'WEEKLY') {
+    const tokens = byDayRaw ? byDayRaw.split(',') : [];
+    if (tokens.length === 0) {
+      byDaySet.add(params.start.getDay());
+    } else {
+      for (const t of tokens) {
+        const day = t.trim().toUpperCase();
+        const mapped =
+          day === 'SU'
+            ? 0
+            : day === 'MO'
+              ? 1
+              : day === 'TU'
+                ? 2
+                : day === 'WE'
+                  ? 3
+                  : day === 'TH'
+                    ? 4
+                    : day === 'FR'
+                      ? 5
+                      : day === 'SA'
+                        ? 6
+                        : null;
+        if (mapped != null) byDaySet.add(mapped);
+      }
+      if (byDaySet.size === 0) byDaySet.add(params.start.getDay());
+    }
+  }
+
+  // 展开窗口：避免把“无限循环”导入成海量数据
+  const now = new Date();
+  const windowStart = new Date(now);
+  windowStart.setDate(windowStart.getDate() - 30);
+  windowStart.setHours(0, 0, 0, 0);
+  const windowEnd = new Date(now);
+  windowEnd.setDate(windowEnd.getDate() + 365);
+  windowEnd.setHours(23, 59, 59, 999);
+
+  const startFloor = new Date(params.start);
+  startFloor.setHours(0, 0, 0, 0);
+
+  const occurrences: EventUpsertInput[] = [];
+  let produced = 0;
+
+  const durationDays = params.isAllDay ? diffDaysBetween(params.start, params.end) : null;
+  const durationMs = params.isAllDay ? null : params.end.getTime() - params.start.getTime();
+
+  const weekStartMonday = (d: Date) => {
+    const day = d.getDay();
+    const diff = (day - 1 + 7) % 7; // 1=周一
+    const out = new Date(d);
+    out.setHours(0, 0, 0, 0);
+    out.setDate(out.getDate() - diff);
+    return out;
+  };
+
+  const baseWeek = weekStartMonday(startFloor).getTime();
+
+  for (
+    let cursor = new Date(windowStart);
+    cursor <= windowEnd;
+    cursor.setDate(cursor.getDate() + 1)
+  ) {
+    const dayFloor = new Date(cursor);
+    dayFloor.setHours(0, 0, 0, 0);
+
+    // 不生成 DTSTART 之前的实例
+    if (dayFloor < startFloor) continue;
+
+    if (freq === 'DAILY') {
+      const diffDays = Math.floor((dayFloor.getTime() - startFloor.getTime()) / 86400000);
+      if (diffDays % interval !== 0) continue;
+    } else {
+      if (!byDaySet.has(dayFloor.getDay())) continue;
+      const week = weekStartMonday(dayFloor).getTime();
+      const diffWeeks = Math.floor((week - baseWeek) / (7 * 86400000));
+      if (diffWeeks % interval !== 0) continue;
+    }
+
+    // 对于定时事件，把时间拷贝到当天；对于全天事件直接使用日期
+    const instanceStart = new Date(dayFloor);
+    if (!params.isAllDay) {
+      instanceStart.setHours(
+        params.start.getHours(),
+        params.start.getMinutes(),
+        params.start.getSeconds(),
+        params.start.getMilliseconds(),
+      );
+      if (instanceStart < params.start) continue;
+    }
+
+    if (until && instanceStart > until) break;
+
+    if (params.isAllDay) {
+      const id = `${params.baseId}#${formatISODate(dayFloor)}`;
+      occurrences.push({
+        id,
+        title: params.title,
+        notes: params.notes,
+        location: params.location,
+        isAllDay: true,
+        startDate: formatISODate(dayFloor),
+        endDate: formatISODate(addDays(dayFloor, durationDays!)),
+      });
+    } else {
+      const id = `${params.baseId}#${instanceStart.toISOString()}`;
+      const instanceEnd = new Date(instanceStart.getTime() + durationMs!);
+      occurrences.push({
+        id,
+        title: params.title,
+        notes: params.notes,
+        location: params.location,
+        isAllDay: false,
+        startAt: instanceStart.toISOString(),
+        endAt: instanceEnd.toISOString(),
+      });
+    }
+    produced++;
+
+    if (countLimit && produced >= countLimit) break;
+  }
+
+  return occurrences.length ? occurrences : [toSingleEventUpsert(params)];
+}
+
+function toSingleEventUpsert(params: ExpandParams): EventUpsertInput {
+  if (params.isAllDay) {
+    return {
+      id: params.baseId,
+      title: params.title,
+      notes: params.notes,
+      location: params.location,
+      isAllDay: true,
+      startDate: formatISODate(params.start),
+      endDate: formatISODate(params.end),
+    };
+  }
+
+  return {
+    id: params.baseId,
+    title: params.title,
+    notes: params.notes,
+    location: params.location,
+    isAllDay: false,
+    startAt: params.start.toISOString(),
+    endAt: params.end.toISOString(),
+  };
+}
+
+function addDays(date: Date, days: number): Date {
+  const out = new Date(date);
+  out.setDate(out.getDate() + days);
+  return out;
+}
+
+function diffDaysBetween(start: Date, endExclusive: Date): number {
+  const a = new Date(start);
+  a.setHours(0, 0, 0, 0);
+  const b = new Date(endExclusive);
+  b.setHours(0, 0, 0, 0);
+  return Math.max(1, Math.floor((b.getTime() - a.getTime()) / 86400000));
+}
+
+function formatISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
