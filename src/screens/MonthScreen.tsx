@@ -7,6 +7,7 @@ import { Calendar, type DateData } from 'react-native-calendars';
 
 import { EventList } from '../components/EventList';
 import { listEventsInDateRange } from '../data/eventRepository';
+import { listSubscriptionEventsInDateRange } from '../data/subscriptionRepository';
 import { exportEventsToICS, importEventsFromICS } from '../services/icalService';
 import { useEventsForDate } from '../hooks/useEventsForDate';
 import { useCalendar } from '../state/CalendarContext';
@@ -45,10 +46,38 @@ export function MonthScreen() {
     async function loadMonthMarks() {
       const monthStart = visibleMonthStart;
       const monthEnd = addMonthsISODateLocal(monthStart, 1);
-      const monthEvents = await listEventsInDateRange(db, monthStart, monthEnd);
+      const [monthEvents, monthSubscriptionEvents] = await Promise.all([
+        listEventsInDateRange(db, monthStart, monthEnd),
+        listSubscriptionEventsInDateRange(db, monthStart, monthEnd),
+      ]);
 
       const days = new Set<string>();
       for (const e of monthEvents) {
+        if (e.isAllDay) {
+          const start = e.startDate < monthStart ? monthStart : e.startDate;
+          const end = e.endDate > monthEnd ? monthEnd : e.endDate;
+          for (let d = start; d < end; d = addDaysISODateLocal(d, 1)) {
+            days.add(d);
+          }
+        } else {
+          const rangeStart = parseISODateLocal(monthStart);
+          const rangeEnd = parseISODateLocal(monthEnd);
+          const eventStart = new Date(e.startAt);
+          const eventEnd = new Date(e.endAt);
+          const startMs = Math.max(eventStart.getTime(), rangeStart.getTime());
+          const endMs = Math.min(eventEnd.getTime(), rangeEnd.getTime());
+          if (endMs > startMs) {
+            const startDay = toISODateLocal(new Date(startMs));
+            const lastMoment = new Date(endMs - 1);
+            const endDay = toISODateLocal(lastMoment);
+            for (let d = startDay; d <= endDay; d = addDaysISODateLocal(d, 1)) {
+              days.add(d);
+            }
+          }
+        }
+      }
+
+      for (const e of monthSubscriptionEvents) {
         if (e.isAllDay) {
           const start = e.startDate < monthStart ? monthStart : e.startDate;
           const end = e.endDate > monthEnd ? monthEnd : e.endDate;
@@ -91,7 +120,7 @@ export function MonthScreen() {
   }, [db, visibleMonthStart, isFocused, marksVersion]);
 
   const markedDates = useMemo(() => {
-    const result: Record<string, any> = {};
+    const result: Record<string, { marked?: boolean; dotColor?: string; selected?: boolean; selectedColor?: string }> = {};
     for (const d of monthEventDays) {
       result[d] = { marked: true, dotColor: '#111827' };
     }
@@ -106,8 +135,8 @@ export function MonthScreen() {
   const handleExport = useCallback(async () => {
     try {
       await exportEventsToICS(db);
-    } catch (e: any) {
-      Alert.alert('导出失败', e.message || '未知错误');
+    } catch (e) {
+      Alert.alert('导出失败', e instanceof Error ? e.message : String(e) || '未知错误');
     }
   }, [db]);
 
@@ -118,8 +147,8 @@ export function MonthScreen() {
         Alert.alert('导入成功', `成功导入 ${count} 个日程`);
         setMarksVersion((v) => v + 1);
       }
-    } catch (e: any) {
-      Alert.alert('导入失败', e.message || '未知错误');
+    } catch (e) {
+      Alert.alert('导入失败', e instanceof Error ? e.message : String(e) || '未知错误');
     }
   }, [db]);
 
