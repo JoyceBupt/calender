@@ -9,6 +9,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Linking,
+  Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Switch,
@@ -456,7 +458,94 @@ export function EventEditorScreen() {
         </Text>
       </Pressable>
 
-      {picker ? (
+      {picker && Platform.OS === 'ios' ? (
+        <Modal transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.pickerContainer}>
+              <View style={styles.pickerHeader}>
+                <Pressable onPress={() => setPicker(null)}>
+                  <Text style={styles.pickerCancel}>取消</Text>
+                </Pressable>
+                <Text style={styles.pickerTitle}>
+                  {picker.mode === 'date' ? '选择日期' : '选择时间'}
+                </Text>
+                <Pressable
+                  onPress={() => {
+                    // iOS 上确认当前选中的值
+                    setPicker(null);
+                  }}
+                >
+                  <Text style={styles.pickerConfirm}>确定</Text>
+                </Pressable>
+              </View>
+              <DateTimePicker
+                value={
+                  isAllDay
+                    ? parseISODateLocal(
+                        picker.kind === 'startDate' ? startDate : endDateInclusive,
+                      )
+                    : picker.kind === 'startDate' || picker.kind === 'startTime'
+                      ? startAt
+                      : endAt
+                }
+                mode={picker.mode}
+                display="spinner"
+                onChange={(_e, selected) => {
+                  // iOS 上 spinner 模式会持续触发 onChange，不关闭 picker
+                  if (selected) {
+                    if (isAllDay) {
+                      const iso = `${selected.getFullYear()}-${String(selected.getMonth() + 1).padStart(2, '0')}-${String(selected.getDate()).padStart(2, '0')}`;
+                      if (picker.kind === 'startDate') {
+                        setStartDate(iso);
+                        if (iso > endDateInclusive) setEndDateInclusive(iso);
+                      } else {
+                        setEndDateInclusive(iso);
+                        if (iso < startDate) setStartDate(iso);
+                      }
+                    } else if (picker.kind === 'startDate') {
+                      const next = new Date(startAt);
+                      next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+                      setStartAt(next);
+                      if (next >= endAt) {
+                        const adjustedEnd = new Date(next);
+                        adjustedEnd.setHours(adjustedEnd.getHours() + 1);
+                        setEndAt(adjustedEnd);
+                      }
+                    } else if (picker.kind === 'endDate') {
+                      const next = new Date(endAt);
+                      next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+                      setEndAt(next);
+                      if (startAt >= next) {
+                        const adjustedStart = new Date(next);
+                        adjustedStart.setHours(adjustedStart.getHours() - 1);
+                        setStartAt(adjustedStart);
+                      }
+                    } else if (picker.kind === 'startTime') {
+                      const next = new Date(startAt);
+                      next.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+                      setStartAt(next);
+                      if (next >= endAt) {
+                        const adjustedEnd = new Date(next);
+                        adjustedEnd.setHours(adjustedEnd.getHours() + 1);
+                        setEndAt(adjustedEnd);
+                      }
+                    } else if (picker.kind === 'endTime') {
+                      const next = new Date(endAt);
+                      next.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+                      setEndAt(next);
+                      if (startAt >= next) {
+                        const adjustedStart = new Date(next);
+                        adjustedStart.setHours(adjustedStart.getHours() - 1);
+                        setStartAt(adjustedStart);
+                      }
+                    }
+                  }
+                }}
+              />
+            </View>
+          </View>
+        </Modal>
+      ) : picker && Platform.OS === 'android' ? (
         <DateTimePicker
           value={
             isAllDay
@@ -535,4 +624,27 @@ const styles = StyleSheet.create({
   },
   disabledButton: { opacity: 0.6 },
   primaryButtonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'flex-end',
+  },
+  pickerContainer: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingBottom: 20,
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+  },
+  pickerCancel: { fontSize: 16, color: '#6B7280' },
+  pickerTitle: { fontSize: 16, fontWeight: '600', color: '#111827' },
+  pickerConfirm: { fontSize: 16, fontWeight: '600', color: '#3B82F6' },
 });
