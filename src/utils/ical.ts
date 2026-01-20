@@ -57,6 +57,60 @@ function parseICalDateTime(value: string): { date: Date; isAllDay: boolean } {
   return { date: new Date(y, m, d, h, min, s), isAllDay: false };
 }
 
+type ICalProperty = {
+  name: string;
+  params: Record<string, string>;
+  value: string;
+};
+
+function parseICalPropertyLine(line: string): ICalProperty | null {
+  const colonIndex = line.indexOf(':');
+  if (colonIndex === -1) return null;
+
+  const left = line.slice(0, colonIndex);
+  const value = line.slice(colonIndex + 1);
+  const [rawName, ...paramParts] = left.split(';');
+  const name = rawName.trim().toUpperCase();
+
+  const params: Record<string, string> = {};
+  for (const p of paramParts) {
+    const eq = p.indexOf('=');
+    if (eq === -1) continue;
+    const k = p.slice(0, eq).trim().toUpperCase();
+    const v = p.slice(eq + 1).trim();
+    if (!k) continue;
+    params[k] = v;
+  }
+
+  return { name, params, value };
+}
+
+function parseICalDateTimeWithParams(
+  value: string,
+  params: Record<string, string>,
+): { date: Date; isAllDay: boolean; tzid: string | null } {
+  const tzid = params['TZID'] ?? null;
+  const valueType = params['VALUE']?.toUpperCase() ?? null;
+
+  if (valueType === 'DATE') {
+    const y = parseInt(value.slice(0, 4), 10);
+    const m = parseInt(value.slice(4, 6), 10) - 1;
+    const d = parseInt(value.slice(6, 8), 10);
+    return { date: new Date(y, m, d), isAllDay: true, tzid };
+  }
+
+  const parsed = parseICalDateTime(value);
+  return { ...parsed, tzid };
+}
+
+function parseICalDateTimeList(
+  value: string,
+  params: Record<string, string>,
+): { date: Date; isAllDay: boolean; tzid: string | null }[] {
+  const parts = value.split(',').map((s) => s.trim()).filter(Boolean);
+  return parts.map((v) => parseICalDateTimeWithParams(v, params));
+}
+
 /**
  * 转义 iCal 文本字段中的特殊字符
  */
@@ -214,16 +268,116 @@ function parseVEvent(veventLines: string[]): EventUpsertInput | null {
   }
 }
 
+type VEventModel = {
+  uid: string;
+  title: string;
+  notes: string | null;
+  location: string | null;
+  isAllDay: boolean;
+  start: Date;
+  end: Date;
+  timezone: string | null;
+  rrule: string | null;
+  exdates: Date[];
+  recurrenceId: Date | null;
+  status: string | null;
+};
+
+function modelIdSuffix(isAllDay: boolean, start: Date): string {
+  return isAllDay ? formatISODate(start) : start.toISOString();
+}
+
+function modelOccurrenceId(baseUid: string, isAllDay: boolean, start: Date): string {
+  return `${baseUid}#${modelIdSuffix(isAllDay, start)}`;
+}
+
+function parseVEventModel(veventLines: string[]): VEventModel | null {
+  const properties: ICalProperty[] = [];
+  for (const line of veventLines) {
+    const prop = parseICalPropertyLine(line);
+    if (prop) properties.push(prop);
+  }
+
+  const uid = properties.find((p) => p.name === 'UID')?.value?.trim() || generateId();
+  const summary = properties.find((p) => p.name === 'SUMMARY')?.value;
+  if (!summary) return null;
+
+  const title = unescapeICalText(summary);
+  const notes = (() => {
+    const v = properties.find((p) => p.name === 'DESCRIPTION')?.value;
+    return v != null ? unescapeICalText(v) : null;
+  })();
+  const location = (() => {
+    const v = properties.find((p) => p.name === 'LOCATION')?.value;
+    return v != null ? unescapeICalText(v) : null;
+  })();
+
+  const dtStartProp = properties.find((p) => p.name === 'DTSTART');
+  if (!dtStartProp) return null;
+  const dtEndProp = properties.find((p) => p.name === 'DTEND');
+
+  const startParsed = parseICalDateTimeWithParams(dtStartProp.value, dtStartProp.params);
+  const endParsed = dtEndProp
+    ? parseICalDateTimeWithParams(dtEndProp.value, dtEndProp.params)
+    : null;
+
+  const isAllDay = startParsed.isAllDay;
+  const start = startParsed.date;
+  let end: Date;
+  if (endParsed) {
+    end = endParsed.date;
+  } else if (isAllDay) {
+    end = new Date(start);
+    end.setDate(end.getDate() + 1);
+  } else {
+    end = new Date(start.getTime() + 60 * 60 * 1000);
+  }
+
+  const timezone = startParsed.tzid ?? null;
+
+  const rrule = properties.find((p) => p.name === 'RRULE')?.value?.trim() || null;
+
+  const exdates: Date[] = [];
+  for (const p of properties.filter((pp) => pp.name === 'EXDATE')) {
+    for (const item of parseICalDateTimeList(p.value, p.params)) {
+      exdates.push(item.date);
+    }
+  }
+
+  const recurrenceIdProp = properties.find((p) => p.name === 'RECURRENCE-ID');
+  const recurrenceId = recurrenceIdProp
+    ? parseICalDateTimeWithParams(recurrenceIdProp.value, recurrenceIdProp.params).date
+    : null;
+
+  const status = properties.find((p) => p.name === 'STATUS')?.value?.trim()?.toUpperCase() || null;
+
+  return {
+    uid,
+    title,
+    notes,
+    location,
+    isAllDay,
+    start,
+    end,
+    timezone,
+    rrule,
+    exdates,
+    recurrenceId,
+    status,
+  };
+}
+
 /**
  * 解析 iCalendar 文件内容，返回事件列表
  */
 export function parseICS(content: string): EventUpsertInput[] {
-  const events: EventUpsertInput[] = [];
+  const output: EventUpsertInput[] = [];
 
   // 处理折行：以空格或 TAB 开头的行是续行
-  const unfoldedContent = content.replace(/\r\n[ \t]/g, '');
+  const unfoldedContent = content.replace(/\r?\n[ \t]/g, '');
   const lines = unfoldedContent.split(/\r?\n/);
 
+  const vevents: string[][] = [];
   let inVEvent = false;
   let veventLines: string[] = [];
 
@@ -233,16 +387,86 @@ export function parseICS(content: string): EventUpsertInput[] {
     if (trimmedLine === 'BEGIN:VEVENT') {
       inVEvent = true;
       veventLines = [];
-    } else if (trimmedLine === 'END:VEVENT') {
+      continue;
+    }
+
+    if (trimmedLine === 'END:VEVENT') {
       inVEvent = false;
-      const parsed = parseVEventWithRecurrence(veventLines);
-      events.push(...parsed);
-    } else if (inVEvent) {
+      if (veventLines.length) vevents.push(veventLines);
+      veventLines = [];
+      continue;
+    }
+
+    if (inVEvent) {
       veventLines.push(trimmedLine);
     }
   }
 
-  return events;
+  const models = vevents.map(parseVEventModel).filter(Boolean) as VEventModel[];
+
+  const byUid = new Map<string, VEventModel[]>();
+  for (const m of models) {
+    const list = byUid.get(m.uid);
+    if (list) list.push(m);
+    else byUid.set(m.uid, [m]);
+  }
+
+  for (const [uid, group] of byUid) {
+    const bases = group.filter((e) => !e.recurrenceId);
+    const overrides = group.filter((e) => !!e.recurrenceId);
+
+    const base = bases.find((e) => !!e.rrule) ?? bases[0];
+    if (!base) continue;
+
+    if (!base.rrule) {
+      for (const e of group) {
+        output.push(modelToUpsert(e, e.recurrenceId ? modelOccurrenceId(uid, e.isAllDay, e.recurrenceId) : e.uid));
+      }
+      continue;
+    }
+
+    const occurrences = expandRecurringEvents({
+      baseId: uid,
+      title: base.title,
+      notes: base.notes,
+      location: base.location,
+      isAllDay: base.isAllDay,
+      start: base.start,
+      end: base.end,
+      rrule: base.rrule,
+    });
+
+    const excluded = new Set<string>();
+    for (const d of base.exdates) {
+      excluded.add(modelOccurrenceId(uid, base.isAllDay, d));
+    }
+
+    const overridesById = new Map<string, EventUpsertInput>();
+    for (const o of overrides) {
+      const rid = o.recurrenceId;
+      if (!rid) continue;
+      const id = modelOccurrenceId(uid, base.isAllDay, rid);
+      if (o.status === 'CANCELLED') {
+        excluded.add(id);
+        continue;
+      }
+      overridesById.set(id, modelToUpsert(o, id));
+    }
+
+    const replaced = occurrences
+      .filter((e) => !excluded.has(e.id))
+      .map((e) => overridesById.get(e.id) ?? e);
+
+    // 有些订阅会只提供 RECURRENCE-ID 的变更项；确保这些 override 不会丢
+    const existingIds = new Set(replaced.map((e) => e.id));
+    for (const [id, e] of overridesById) {
+      if (!excluded.has(id) && !existingIds.has(id)) replaced.push(e);
+    }
+
+    output.push(...replaced);
+  }
+
+  return output;
 }
 
 type ExpandParams =
@@ -390,17 +614,25 @@ function expandRecurringEvents(params: ExpandParams): EventUpsertInput[] {
     }
   }
 
-  // 展开窗口：避免把“无限循环”导入成海量数据
-  const now = new Date();
-  const windowStart = new Date(now);
-  windowStart.setDate(windowStart.getDate() - 30);
-  windowStart.setHours(0, 0, 0, 0);
-  const windowEnd = new Date(now);
-  windowEnd.setDate(windowEnd.getDate() + 365);
-  windowEnd.setHours(23, 59, 59, 999);
-
   const startFloor = new Date(params.start);
   startFloor.setHours(0, 0, 0, 0);
+
+  // 展开窗口：避免把“无限循环”导入成海量数据；若有 COUNT/UNTIL 则从 DTSTART 开始生成以保证语义正确
+  const now = new Date();
+  const windowStart = new Date(countLimit || until ? startFloor : now);
+  if (!countLimit && !until) {
+    windowStart.setDate(windowStart.getDate() - 30);
+  }
+  windowStart.setHours(0, 0, 0, 0);
+  if (windowStart < startFloor) {
+    windowStart.setTime(startFloor.getTime());
+  }
+
+  const windowEnd = new Date(until ? until : now);
+  if (!until) {
+    windowEnd.setDate(windowEnd.getDate() + 365);
+  }
+  windowEnd.setHours(23, 59, 59, 999);
 
   const occurrences: EventUpsertInput[] = [];
   let produced = 0;
@@ -419,11 +651,7 @@ function expandRecurringEvents(params: ExpandParams): EventUpsertInput[] {
 
   const baseWeek = weekStartMonday(startFloor).getTime();
 
-  for (
-    let cursor = new Date(windowStart);
-    cursor <= windowEnd;
-    cursor.setDate(cursor.getDate() + 1)
-  ) {
+  for (let cursor = new Date(windowStart); cursor <= windowEnd; cursor.setDate(cursor.getDate() + 1)) {
     const dayFloor = new Date(cursor);
     dayFloor.setHours(0, 0, 0, 0);
 
@@ -507,6 +735,32 @@ function toSingleEventUpsert(params: ExpandParams): EventUpsertInput {
     isAllDay: false,
     startAt: params.start.toISOString(),
     endAt: params.end.toISOString(),
+  };
+}
+
+function modelToUpsert(model: VEventModel, id: string): EventUpsertInput {
+  if (model.isAllDay) {
+    return {
+      id,
+      title: model.title,
+      notes: model.notes,
+      location: model.location,
+      timezone: model.timezone,
+      isAllDay: true,
+      startDate: formatISODate(model.start),
+      endDate: formatISODate(model.end),
+    };
+  }
+
+  return {
+    id,
+    title: model.title,
+    notes: model.notes,
+    location: model.location,
+    timezone: model.timezone,
+    isAllDay: false,
+    startAt: model.start.toISOString(),
+    endAt: model.end.toISOString(),
   };
 }
 
