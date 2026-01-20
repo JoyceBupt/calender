@@ -18,6 +18,7 @@ import {
   listSubscriptions,
 } from '../data/subscriptionRepository';
 import { syncSubscription } from '../services/subscriptionService';
+import { resetAllData } from '../services/resetService';
 
 const COLORS = ['#6366F1', '#EC4899', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
@@ -30,6 +31,7 @@ export function SubscriptionsScreen() {
   const [newUrl, setNewUrl] = useState('');
   const [selectedColor, setSelectedColor] = useState(COLORS[0]);
   const [syncing, setSyncing] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
 
   const loadSubscriptions = useCallback(async () => {
     setLoading(true);
@@ -156,10 +158,46 @@ export function SubscriptionsScreen() {
     </View>
   );
 
+  const handleResetAll = () => {
+    Alert.alert(
+      '清空所有数据',
+      '将删除本地日程、提醒、订阅及订阅事件，并取消所有已安排的通知。该操作不可恢复，确定继续吗？',
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '确定清空',
+          style: 'destructive',
+          onPress: async () => {
+            setResetting(true);
+            try {
+              await resetAllData(db);
+              await loadSubscriptions();
+              Alert.alert('已清空', '数据已重置');
+            } catch (e) {
+              Alert.alert('清空失败', e instanceof Error ? e.message : String(e));
+            } finally {
+              setResetting(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <View style={styles.container}>
       <Pressable style={styles.addButton} onPress={() => setModalVisible(true)}>
         <Text style={styles.addButtonText}>添加订阅</Text>
+      </Pressable>
+
+      <Pressable
+        style={[styles.resetButton, resetting ? styles.resetButtonDisabled : null]}
+        onPress={handleResetAll}
+        disabled={resetting || syncing != null}
+      >
+        <Text style={styles.resetButtonText}>
+          {resetting ? '清空中...' : '清空所有数据'}
+        </Text>
       </Pressable>
 
       {loading ? (
@@ -247,6 +285,16 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   addButtonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  resetButton: {
+    marginTop: 10,
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  resetButtonDisabled: { opacity: 0.6 },
+  resetButtonText: { color: '#991B1B', fontWeight: '800', fontSize: 14 },
   hint: { color: '#6B7280', textAlign: 'center', marginTop: 20 },
   list: { gap: 12 },
   item: {
