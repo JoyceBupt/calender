@@ -199,6 +199,22 @@ export function WeekScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, gap: 12 },
+  weekNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  navButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#111827',
+  },
+  navButtonText: { color: '#fff', fontWeight: '800', fontSize: 18, lineHeight: 18 },
+  weekRangeText: { flex: 1, textAlign: 'center', fontSize: 14, fontWeight: '700', color: '#111827' },
   weekHeaderRow: { flexDirection: 'row' },
   weekDaysContainer: { flex: 1, flexDirection: 'row' },
   dayCell: {
